@@ -1,2 +1,2 @@
 npm test
-cve-lite .
+npx cve-lite-cli .
