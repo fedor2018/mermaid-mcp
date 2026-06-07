@@ -98,6 +98,26 @@ if (_SVGElement) {
   };
 }
 
+// SVGTextElement.getComputedTextLength — jsdom doesn't implement this.
+// When htmlLabels: false, mermaid uses native SVG <text> and calls this
+// for text measurement during layout. Approximate with character count.
+// Also needed on HTMLSpanElement — mermaid may call it on span children of <text>.
+const _SVGTextElement = window.SVGTextElement;
+if (_SVGTextElement) {
+  _SVGTextElement.prototype.getComputedTextLength = function () {
+    const text = this.textContent || '';
+    const fontSize = parseFloat(this.getAttribute?.('font-size') || '16') || 16;
+    return text.length * fontSize * 0.5;
+  };
+}
+const _HTMLSpanElement = window.HTMLSpanElement;
+if (_HTMLSpanElement) {
+  _HTMLSpanElement.prototype.getComputedTextLength = function () {
+    const text = this.textContent || '';
+    return text.length * 8;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 6. Export getComputedStyle from jsdom window to global
 //    (provided by jsdom on window, but Mermaid sometimes expects it on global)

@@ -181,8 +181,12 @@ IS_ERROR=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.isError // empty' 2>/dev
 MIME_TYPE=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .mimeType' 2>/dev/null)
 TEXT_INFO=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.content[] | select(.type == "text") | .text' 2>/dev/null)
 
-if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/png" ]; then
-  pass "render — PNG returns image/png content"
+# Extract PNG base64 and decode to file
+PNG_BASE64=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .data' 2>/dev/null)
+mkdir -p "$SCRIPT_DIR/dist"
+if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/png" ] && [ -n "$PNG_BASE64" ] && [ "$PNG_BASE64" != "null" ]; then
+  echo "$PNG_BASE64" | base64 -d > "$SCRIPT_DIR/dist/test-render.png" 2>/dev/null
+  pass "render — PNG returns image/png content → saved dist/test-render.png ($(wc -c < "$SCRIPT_DIR/dist/test-render.png" | tr -d ' ') bytes)"
 else
   fail "render — PNG (isError=${IS_ERROR}, mimeType=${MIME_TYPE}, text=${TEXT_INFO})"
 fi
@@ -207,8 +211,11 @@ RENDER_SVG_RESPONSE=$(mcp_request '{
 IS_ERROR=$(echo "$RENDER_SVG_RESPONSE" | jq -r '.result.isError // empty' 2>/dev/null)
 MIME_TYPE=$(echo "$RENDER_SVG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .mimeType' 2>/dev/null)
 
-if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/svg+xml" ]; then
-  pass "render — SVG returns image/svg+xml content"
+# Extract SVG base64 and decode to file
+SVG_BASE64=$(echo "$RENDER_SVG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .data' 2>/dev/null)
+if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/svg+xml" ] && [ -n "$SVG_BASE64" ] && [ "$SVG_BASE64" != "null" ]; then
+  echo "$SVG_BASE64" | base64 -d > "$SCRIPT_DIR/dist/test-render.svg" 2>/dev/null
+  pass "render — SVG returns image/svg+xml content → saved dist/test-render.svg ($(wc -c < "$SCRIPT_DIR/dist/test-render.svg" | tr -d ' ') bytes)"
 else
   fail "render — SVG (isError=${IS_ERROR}, mimeType=${MIME_TYPE})"
 fi
