@@ -1,0 +1,24 @@
+{
+  "name": "mermaid-mcp",
+  "version": "1.0.0",
+  "description": "Custom Mermaid MCP server — fast validation + PNG/SVG rendering via jsdom + sharp, no Chromium needed",
+  "type": "module",
+  "main": "src/mcp-server.mjs",
+  "scripts": {
+    "start": "node src/mcp-server.mjs",
+    "test": "node --test src/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "jsdom": "29.1.1",
+    "mermaid": "11.15.0",
+    "sharp": "0.34.5",
+    "zod": "4.4.3"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

@@ -1,0 +1,14 @@
+services:
+  mermaid-mcp:
+    image: mermaid-mcp:latest
+    container_name: mermaid-mcp
+    build: .
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - puma-net
+
+networks:
+  puma-net:
+    external: true
