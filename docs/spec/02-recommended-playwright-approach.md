@@ -175,7 +175,7 @@ async function setupMermaidPage() {
 3. **Rewrite `renderer.js`** — Replace jsdom with Playwright browser context
 4. **Remove `polyfills.js`** — No longer needed
 5. **Update tests** — Smoke tests should pass without changes (same HTTP API)
-6. **Build and deploy** — Multi-arch build, push to Docker Hub, deploy on puma-net
+6. **Build and deploy** — Multi-arch build, push to Docker Hub, deploy
 7. **Monitor** — Verify render times are acceptable (warm browser should be fast)
 
 ---
@@ -184,8 +184,8 @@ async function setupMermaidPage() {
 
 | Risk | Mitigation |
 |------|-----------|
-| 500-900 MB image size | Acceptable for puma-net; this was the original motivation for avoiding Chromium, but correctness outweighs size |
+| 500-900 MB image size | Acceptable tradeoff for correct rendering; correctness outweighs image size |
 | Cold start 2-5s | Warm browser pool — Chromium started once at container startup |
 | Chromium crash risk | `restart: unless-stopped` in docker compose handles crashes |
 | Playwright version churn | Pin to specific Playwright version (v1.52.0); upgrade explicitly |
-| `--no-sandbox` security | Private network (puma-net) — acceptable; container runs as non-root |
+| `--no-sandbox` security | Acceptable for private network deployments; container runs as non-root |

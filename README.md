@@ -27,7 +27,7 @@ This server replaces Chromium with **jsdom** (fake DOM) + **sharp** (SVG → PNG
 | **`render`** | Full rendering to PNG (default) or SVG via jsdom + sharp, no browser |
 | **Stateless** | Per-request `McpServer` + transport — no cross-request state |
 | **HTTP-native** | Node.js built-in `http` module — no Express dependency |
-| **Docker-ready** | Multi-arch (amd64 + arm64), small image, `puma-net` deployment |
+| **Docker-ready** | Multi-arch (amd64 + arm64), small image |
 | **Structured logging** | JSON logs to stderr, debug level via `LOG_LEVEL` env var |
 
 ## Architecture
@@ -38,17 +38,15 @@ graph TD
         A["agent<br/>calls tool via HTTP"]
     end
 
-    subgraph "puma-net"
-        subgraph "mermaid-mcp container"
-            B["http.createServer"]
-            C["POST /mcp"]
-            D["McpServer (per request)"]
-            E["validate tool"]
-            F["render tool"]
-            G["mermaid.parse()"]
-            H["mermaid.render() + jsdom"]
-            I["sharp → PNG"]
-        end
+    subgraph "mermaid-mcp container"
+        B["http.createServer"]
+        C["POST /mcp"]
+        D["McpServer (per request)"]
+        E["validate tool"]
+        F["render tool"]
+        G["mermaid.parse()"]
+        H["mermaid.render() + jsdom"]
+        I["sharp → PNG"]
     end
 
     A -->|"HTTP POST /mcp"| B
@@ -80,7 +78,6 @@ graph TD
 
 - Node.js 26+ (see `.nvmrc`)
 - Docker Desktop with Docker Compose
-- `puma-net` Docker network (created automatically by `start.sh`)
 
 ### Local Development
 
@@ -345,60 +342,41 @@ The smoke test suite (`test.sh`) tests via `curl` against the running container:
 ### Local Compose
 
 ```bash
-# Start (creates puma-net if missing, builds image, runs container)
+# Start (builds image, runs container)
 ./start.sh
 
 # Stop
 ./stop.sh
 ```
 
-### Puma-LAN (puma-net)
-
-The deployment lives at `~/www/olho/puma-lan/lite-llm/mcp/mermaid/` and uses the **Infisical** pattern for secret management.
-
-```bash
-# Deploy to puma-net
-cd ~/www/olho/puma-lan/lite-llm/mcp/mermaid
-./start.sh
-
-# Stop from puma-net
-./stop.sh
-
-# Pin image digest (for reproducible deployments)
-./pin-image-digest.sh
-
-# Build and push (copies source from misc dir, builds, pushes)
-./build-and-push.sh
-```
-
 ### opencode Integration
 
-The server is configured in `~/.config/opencode/opencode.jsonc`:
+To use this server with [opencode](https://github.com/anomalyco/opencode), add the following to your MCP configuration:
 
 ```jsonc
 "mermaid": {
   "type": "remote",
-  "url": "https://lite-llm.lan/mcp/mermaid",
+  "url": "http://localhost:3000/mcp",
   "enabled": true,
   "category": "validation",
   "enabledTools": ["validate", "render"]
 }
 ```
 
-This replaces the old `mermaid-validator` entry that used `@rtuin/mcp-mermaid-validator` via stdio transport.
+For remote deployments, replace the URL with your server's address.
 
 ## Project Structure
 
 ```
 mermaid-mcp/
 ├── Dockerfile                     # node:26.3.0-slim + fonts-dejavu + fonts-liberation
-├── docker-compose.yml             # Local compose (puma-net, port 3000)
+├── docker-compose.yml             # Local compose (port 3000)
 ├── package.json                   # Pinned deps, ESM, npm scripts
 ├── package-lock.json              # Lockfile
 ├── .nvmrc                         # Node.js 26
 ├── .gitignore
 ├── .husky/                        # Git hooks
-├── start.sh                       # Start local compose (creates puma-net if needed)
+├── start.sh                       # Start local compose (creates Docker network if needed)
 ├── stop.sh                        # Stop local compose
 ├── build-and-push.sh              # Build + push to Docker Hub (multi-arch)
 ├── test.sh                        # Smoke tests (7 HTTP tests via curl)
@@ -482,4 +460,4 @@ Images are pushed to `docker.io/tuiteraz/mermaid-mcp` via `build-and-push.sh`. S
 
 ## License
 
-This project is part of the internal tooling for the Puma LAN infrastructure.
+MIT

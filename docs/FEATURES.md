@@ -90,7 +90,7 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 
 **Status:** ✅ Implemented
 
-**Description:** Uses `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk` over Node.js built-in `http.createServer`. Follows the hugging-kreuzberg-mcp pattern for remote opencode access via LiteLLM proxy.
+**Description:** Uses `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk` over Node.js built-in `http.createServer`. Follows the hugging-kreuzberg-mcp pattern for remote MCP access.
 
 **Server properties:**
 - Port 3000 (configurable via `PORT` env)
@@ -143,21 +143,19 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 
 ---
 
-## 6. Docker Deployment with LiteLLM Proxy
+## 6. Docker Deployment
 
 **Status:** ✅ Implemented
 
-**Description:** Multi-arch Docker image (`linux/amd64`, `linux/arm64`) deployed on puma-net, accessible from opencode via LiteLLM proxy at `https://lite-llm.lan/mcp/mermaid`.
+**Description:** Multi-arch Docker image (`linux/amd64`, `linux/arm64`) available via Docker Hub.
 
 **Dockerfile:** `node:26.3.0-slim` base with `fonts-dejavu` + `fonts-liberation`. No Chromium. ~150-300 MB image.
 
-**Deployment config:** At `puma-lan/lite-llm/mcp/mermaid/`:
-- `docker-compose.yaml` — Single service on `puma-net` network, `restart: unless-stopped`
-- `start.sh` / `stop.sh` — Infisical integration (`infisical run --env=prod --path=/lite-llm/mcp/mermaid`)
-- `build-and-push.sh` — Copies source, builds multi-arch, pushes to Docker Hub (`tuiteraz/mermaid-mcp`)
-- `pin-image-digest.sh` — Pins image digest in compose file
+**Deployment:** Standard docker compose with a single service, `restart: unless-stopped`.
+- `build-and-push.sh` — Multi-arch build and push to Docker Hub (`tuiteraz/mermaid-mcp`)
+- `pin-image-digest.sh` — Pins image digest for reproducible deployments
 
-**opencode config:** Replaces broken `mermaid-validator` entry with remote HTTP MCP.
+**opencode config:** Configure as a remote MCP server pointing to your deployment endpoint.
 
 ---
 
