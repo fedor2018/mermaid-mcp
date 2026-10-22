@@ -68,6 +68,7 @@ graph TD
 - **HTTP server:** Node.js built-in `http` module — no Express dependency
 - **Stateless:** Per-request `McpServer` + transport pair — no cross-request state
 - **Deployment:** Docker on puma-net, accessible via LiteLLM proxy at `https://lite-llm.lan/mcp/mermaid`
+- **Second transport:** stdio (`src/stdio-server.mjs`) — same tools over stdin/stdout, for local clients and for `mcp-proxy` (see [mcp-proxy.md](./mcp-proxy.md))
 
 ---
 
@@ -90,6 +91,9 @@ npm test
 
 # Run locally (port 3000)
 node src/mcp-server.mjs
+
+# Run locally as a stdio MCP server
+node src/stdio-server.mjs
 ```
 
 ### Docker
@@ -113,6 +117,8 @@ node src/mcp-server.mjs
 mermaid-mcp/
 ├── src/
 │   ├── mcp-server.mjs      # HTTP server + MCP transport
+│   ├── stdio-server.mjs    # stdio server + MCP transport
+│   ├── server-factory.js   # Shared createMcpServer() for both transports
 │   ├── tools.js             # validate + render tool definitions
 │   ├── renderer.js          # Validation + rendering pipeline
 │   ├── polyfills.js         # jsdom browser polyfills
@@ -121,6 +127,7 @@ mermaid-mcp/
 │   └── *.test.js            # Unit tests (Node.js test runner)
 ├── docs/                    # Feature docs and specs
 ├── Dockerfile               # node:26.3.0-slim + fonts
+├── Dockerfile.stdio-proxy   # Official mcp-proxy image + our stdio server
 ├── docker-compose.yml       # Local smoke-test compose
 ├── build-and-push.sh        # Multi-arch Docker Hub push
 ├── start.sh / stop.sh       # Local compose lifecycle
@@ -146,10 +153,11 @@ mermaid-mcp/
 
 | ENV | Default | Description |
 |-----|---------|-------------|
-| `PORT` | `3000` | HTTP server port |
-| `DEFAULT_FORMAT` | `png` | Default render output format |
-| `BACKGROUND_COLOR` | `transparent` | Default PNG background |
+| `MCP_PORT` | `3000` | HTTP server port (HTTP transport only) |
+| `MERMAID_DEFAULT_FORMAT` | `png` | Default render output format |
+| `MERMAID_BACKGROUND_COLOR` | `transparent` | Default PNG background |
 | `LOG_LEVEL` | `info` | Logging level (`debug` / `info`) |
+| `MCP_MAX_BODY_SIZE` | `10485760` | Max request body size in bytes (HTTP transport only) |
 
 ---
 
@@ -173,6 +181,18 @@ mermaid-mcp/
   "headers": {
     "Authorization": "Bearer sk-****"
   },      
+  "enabled": true,
+  "category": "validation",
+  "enabledTools": ["validate", "render"]
+}
+```
+
+For a local stdio deployment use the `local` type instead:
+
+```jsonc
+"mermaid": {
+  "type": "local",
+  "command": ["node", "/abs/path/to/mermaid-mcp/src/stdio-server.mjs"],
   "enabled": true,
   "category": "validation",
   "enabledTools": ["validate", "render"]

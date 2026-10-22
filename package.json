@@ -6,6 +6,7 @@
   "main": "src/mcp-server.mjs",
   "scripts": {
     "start": "node src/mcp-server.mjs",
+    "start:stdio": "node src/stdio-server.mjs",
     "test": "node --test src/*.test.js"
   },
   "dependencies": {

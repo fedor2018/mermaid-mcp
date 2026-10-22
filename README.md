@@ -27,6 +27,7 @@ This server replaces Chromium with **jsdom** (fake DOM) + **sharp** (SVG → PNG
 | **`render`** | Full rendering to PNG (default) or SVG via jsdom + sharp, no browser |
 | **Stateless** | Per-request `McpServer` + transport — no cross-request state |
 | **HTTP-native** | Node.js built-in `http` module — no Express dependency |
+| **Two transports** | Streamable HTTP (port 3000) **and** stdio (stdin/stdout) — same tools |
 | **Docker-ready** | Multi-arch (amd64 + arm64), small image |
 | **Structured logging** | JSON logs to stderr, debug level via `LOG_LEVEL` env var |
 
@@ -61,12 +62,26 @@ graph TD
     style I fill:#fff4e1
 ```
 
+The tool layer is transport-agnostic — `src/server-factory.js` builds the `McpServer`
+once, and each transport only supplies its own connection:
+
+```mermaid
+graph LR
+    F1["server-factory.js<br/>createMcpServer()"] --> H1["mcp-server.mjs<br/>StreamableHTTP :3000"]
+    F1 --> S1["stdio-server.mjs<br/>StdioServerTransport"]
+    H1 --> T1["validate / render"]
+    S1 --> T1
+
+    style F1 fill:#f3e5f5
+```
+
 **Key design decisions:**
 
 | Concern | Decision | Rationale |
 |---------|----------|-----------|
-| Transport | HTTP (StreamableHTTPServerTransport, port 3000) | Remote opencode access, follows hugging-kreuzberg pattern |
+| Transport | HTTP (StreamableHTTPServerTransport, port 3000) **or** stdio (stdin/stdout) | Remote opencode access over HTTP; stdio for local clients and for `mcp-proxy` |
 | HTTP server | Node.js built-in `http` | No Express dependency, per user request |
+| Tool layer | Shared `createMcpServer()` factory | Same tools and metadata on both transports, no duplication |
 | Validation | `mermaid.parse()` | Pure Node.js, instant, no DOM |
 | Rendering | jsdom + sharp (no Chromium) | Mermaid v11+ `render()` works with jsdom; sharp rasterizes SVG→PNG |
 | Docker base | `node:26.3.0-slim` | Latest stable, no Chromium — tiny image, fast pulls |
@@ -89,7 +104,10 @@ npm install
 # Run locally (port 3000)
 npm start
 
-# Run tests (60 pass, 1 skip, 0 fail)
+# Run locally as a stdio MCP server
+npm run start:stdio
+
+# Run tests (70 pass, 1 skip, 0 fail)
 npm test
 ```
 
@@ -124,6 +142,51 @@ npm test
 # Dry run (show commands, don't execute)
 ./build-and-push.sh --dry-run
 ```
+
+## Transport Modes
+
+The same two tools are exposed over two transports.
+
+| Mode | Entry point | Endpoint | Use when |
+|------|-------------|----------|----------|
+| **HTTP** | `src/mcp-server.mjs` | `POST http://:3000/mcp` | The server runs in Docker / on another host and clients reach it over the network |
+| **stdio** | `src/stdio-server.mjs` | stdin/stdout (JSON-RPC) | The client spawns the server as a child process, or a proxy does |
+
+### stdio mode
+
+```bash
+npm run start:stdio
+```
+
+- stdout carries **JSON-RPC messages only** — every log line goes to stderr, so the stream stays parseable.
+- The server exits with code `0` when stdin is closed (EOF) — the shutdown sequence `mcp-proxy` relies on.
+
+### stdio mode behind `mcp-proxy`
+
+[`sparfenyuk/mcp-proxy`](https://github.com/sparfenyuk/mcp-proxy) spawns a stdio MCP server as a child
+process and re-exposes it as SSE / Streamable HTTP. That is the shortest path from a local stdio server
+to a remote HTTP endpoint:
+
+```bash
+# Proxy on :8080, our server spawned as a child process
+mcp-proxy --port=8080 --pass-environment -- node /abs/path/to/mermaid-mcp/src/stdio-server.mjs
+
+# → http://127.0.0.1:8080/mcp   (Streamable HTTP)
+# → http://127.0.0.1:8080/sse   (SSE)
+```
+
+Use an **absolute path** to the script — the proxy runs the child in its own working directory.
+`--pass-environment` forwards `PATH` and the rest of the environment to the child.
+
+Ready-made image (official proxy image + our stdio server in one container):
+
+```bash
+docker build -f Dockerfile.stdio-proxy -t mermaid-mcp-stdio-proxy .
+docker run --rm -p 8080:8080 mermaid-mcp-stdio-proxy
+```
+
+See [docs/mcp-proxy.md](./docs/mcp-proxy.md) for the full recipe, including named servers and the
+reverse direction (proxying the HTTP server as a stdio server).
 
 ## Tool Reference
 
@@ -284,13 +347,14 @@ MCP_PORT=8080 npm start
 ### Running Tests
 
 ```bash
-# All tests (60 pass, 1 skip, 0 fail)
+# All tests (70 pass, 1 skip, 0 fail)
 npm test
 
 # Specific test file
 node --test src/renderer.test.js
 node --test src/tools.test.js
 node --test src/mcp-server.test.js
+node --test src/stdio-server.test.js
 ```
 
 ### Test Coverage
@@ -300,7 +364,8 @@ node --test src/mcp-server.test.js
 | `src/renderer.test.js` | 36 | Validate (6 diagram types), render SVG (6 types), render PNG (5 types + 1 skipped), error paths |
 | `src/tools.test.js` | 4 | Tool schema registration, validate handler, render handler (PNG + SVG) |
 | `src/mcp-server.test.js` | 21 | MCP protocol (initialize, tools/list, tools/call), HTTP error codes (405, 415, 413, 400) |
-| **Total** | **60** | **60 pass, 1 skip, 0 fail** |
+| `src/stdio-server.test.js` | 10 | stdio protocol (initialize, tools/list, tools/call), stdout purity, logs on stderr, clean exit on stdin EOF |
+| **Total** | **71** | **70 pass, 1 skip, 0 fail** |
 
 ### Smoke Tests (Docker)
 
@@ -365,11 +430,24 @@ To use this server with [opencode](https://github.com/anomalyco/opencode), add t
 
 For remote deployments, replace the URL with your server's address.
 
+To run it as a **local** stdio server instead (the client spawns the process):
+
+```jsonc
+"mermaid": {
+  "type": "local",
+  "command": ["node", "/abs/path/to/mermaid-mcp/src/stdio-server.mjs"],
+  "enabled": true,
+  "category": "validation",
+  "enabledTools": ["validate", "render"]
+}
+```
+
 ## Project Structure
 
 ```
 mermaid-mcp/
 ├── Dockerfile                     # node:26.3.0-slim + fonts-dejavu + fonts-liberation
+├── Dockerfile.stdio-proxy         # Official mcp-proxy image + our stdio server (one container)
 ├── docker-compose.yml             # Local compose (port 3000)
 ├── package.json                   # Pinned deps, ESM, npm scripts
 ├── package-lock.json              # Lockfile
@@ -382,12 +460,15 @@ mermaid-mcp/
 ├── test.sh                        # Smoke tests (7 HTTP tests via curl)
 └── src/
     ├── mcp-server.mjs             # Entry: http.createServer + StreamableHTTPServerTransport
+    ├── stdio-server.mjs           # Entry: StdioServerTransport (stdin/stdout)
+    ├── server-factory.js          # Shared createMcpServer() — both transports
     ├── tools.js                   # validate + render tool definitions (Zod schemas)
     ├── renderer.js                # Render pipeline: mermaid.parse → mermaid.render → sharp
     ├── polyfills.js               # jsdom + browser polyfills (rAF, ResizeObserver, CSSStyleSheet, SVG)
     ├── config.js                  # Frozen config object from env vars
     ├── logger.js                  # Structured JSON logging to stderr
     ├── mcp-server.test.js         # Server tests (21: MCP protocol + HTTP error codes)
+    ├── stdio-server.test.js       # stdio tests (10: protocol, tool calls, stdout purity, EOF exit)
     ├── tools.test.js              # Tool tests (4: schema + handler)
     └── renderer.test.js           # Renderer tests (36: validate + render, 1 skip)
 ```
@@ -397,11 +478,13 @@ mermaid-mcp/
 | File | Purpose |
 |------|---------|
 | `src/mcp-server.mjs` | HTTP server entry point. Uses Node.js built-in `http.createServer` (no Express). Each request gets its own stateless `McpServer` + `StreamableHTTPServerTransport` pair. Handles POST `/mcp`, validates Content-Type, enforces body size limit (10 MB), graceful shutdown on SIGINT. |
+| `src/stdio-server.mjs` | stdio entry point. Uses `StdioServerTransport` — one long-lived `McpServer` per process, JSON-RPC over stdin/stdout. stdout carries protocol traffic only; logs go to stderr. Exits with code `0` on stdin EOF, SIGINT or SIGTERM. |
+| `src/server-factory.js` | Shared `createMcpServer()` — builds the `McpServer` (name, version, instructions) and registers the tools. Used by both transports so they expose the same surface. |
 | `src/tools.js` | MCP tool definitions. `validate` — parse-only validation via `mermaid.parse()`. `render` — validate + render pipeline. Input schemas use Zod. Returns MCP-formatted responses with text + image content. |
 | `src/renderer.js` | Core rendering pipeline. `validate(diagram)` — uses `mermaid.parse()` with `suppressErrors: false`, returns diagram type or parse error. `render(diagram, format, backgroundColor)` — validates first, then `mermaid.render()` for SVG, then `sharp` for PNG conversion (density 144, compression 9). |
 | `src/polyfills.js` | Browser environment for Mermaid in Node.js. Creates a single `JSDOM` instance, attaches `window`/`document`/`Element` to `global`, polyfills `requestAnimationFrame`, `ResizeObserver`, `CSSStyleSheet`, SVG `getBBox`/`getCTM`. Lazy-loads DOMPurify + Mermaid via dynamic `import()` after globals are set. |
 | `src/config.js` | Configuration — single frozen object loaded from environment variables at startup. No `process.env` access outside this module. |
-| `src/logger.js` | Structured JSON logging to stderr (stdout reserved for HTTP in Docker). `logInfo` always emits; `logDebug` only when `LOG_LEVEL=debug`. |
+| `src/logger.js` | Structured JSON logging to stderr (stdout is reserved for the protocol). `logInfo` always emits; `logDebug` only when `LOG_LEVEL=debug`. |
 
 ## Configuration
 
@@ -409,12 +492,12 @@ All configuration is loaded from environment variables at startup via `src/confi
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_PORT` | `3000` | HTTP server port |
+| `MCP_PORT` | `3000` | HTTP server port (HTTP transport only) |
 | `MERMAID_DEFAULT_FORMAT` | `png` | Default output format (`png` or `svg`) |
 | `MERMAID_BACKGROUND_COLOR` | `transparent` | Default background color for PNG rendering (CSS color value) |
 | `MERMAID_SCALE` | `1` | Render scale factor |
 | `LOG_LEVEL` | `info` | Log level (`info` or `debug`) |
-| `MCP_MAX_BODY_SIZE` | `10485760` | Maximum request body size in bytes (10 MB) |
+| `MCP_MAX_BODY_SIZE` | `10485760` | Maximum request body size in bytes (10 MB, HTTP transport only) |
 
 **Example:**
 

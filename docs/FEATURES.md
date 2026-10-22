@@ -117,7 +117,28 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 
 ---
 
-## 5. jsdom + Sharp Rendering (No Chromium)
+## 5. stdio Transport — StdioServerTransport
+
+**Status:** ✅ Implemented
+
+**Description:** The same tools are also exposed over stdio (`src/stdio-server.mjs`). One long-lived `McpServer` per process, JSON-RPC over stdin/stdout. Built for local MCP clients and for [`sparfenyuk/mcp-proxy`](https://github.com/sparfenyuk/mcp-proxy), which spawns stdio servers and re-exposes them as SSE / Streamable HTTP — see [mcp-proxy.md](./mcp-proxy.md).
+
+**Shared tool layer:** `src/server-factory.js` exposes `createMcpServer()` — both transports build their `McpServer` from it, so the tool set, `serverInfo` and `instructions` never drift apart.
+
+**Server properties:**
+- stdout carries **JSON-RPC messages only** — all logs go to stderr, so the stream stays parseable
+- one `McpServer` for the whole process (stdio is a single long-lived session, unlike the stateless HTTP path)
+- exits with code `0` when stdin is closed (EOF), on SIGINT or on SIGTERM
+- shutdown order: close the transport → pause and unref stdin → let Node exit naturally, so pending stdout writes are flushed instead of being truncated
+- `MCP_PORT` and `MCP_MAX_BODY_SIZE` are HTTP-only and have no effect here
+
+**Tests:** `src/stdio-server.test.js` — 10 tests: initialize, tools/list, validate (valid + invalid), render (PNG + SVG), stdout purity (every line must be valid JSON-RPC), logs on stderr, clean exit on stdin EOF.
+
+**Startup latency:** `jsdom` and `sharp` are imported before the server can answer `initialize` (measured 2.4–9.7 s depending on the filesystem cache). A proxy that waits for the handshake inherits that delay.
+
+---
+
+## 6. jsdom + Sharp Rendering (No Chromium)
 
 **Status:** ⚠️ Implemented (broken — see [spec/01](./spec/01-current-approach.md))
 
@@ -143,7 +164,7 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 
 ---
 
-## 6. Docker Deployment
+## 7. Docker Deployment
 
 **Status:** ✅ Implemented
 
@@ -155,11 +176,15 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 - `build-and-push.sh` — Multi-arch build and push to Docker Hub (`tuiteraz/mermaid-mcp`)
 - `pin-image-digest.sh` — Pins image digest for reproducible deployments
 
+**Second image:** `Dockerfile.stdio-proxy` — based on the official `ghcr.io/sparfenyuk/mcp-proxy`
+image plus Node.js and the Mermaid fonts. The proxy spawns our stdio server as a child process and
+serves it as SSE / Streamable HTTP on `:8080/mcp`. See [mcp-proxy.md](./mcp-proxy.md).
+
 **opencode config:** Configure as a remote MCP server pointing to your deployment endpoint.
 
 ---
 
-## 7. Structured JSON Logging
+## 8. Structured JSON Logging
 
 **Status:** ✅ Implemented
 
@@ -175,10 +200,10 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 
 ---
 
-## 8. Smoke Test Suite
+## 9. Smoke Test Suite
 
 **Status:** ✅ Implemented
 
 **Description:** `test.sh` — 7 smoke tests via HTTP/curl against the running container. Tests MCP initialize handshake, tools/list, validate (valid + invalid), render (PNG + SVG + invalid). Produces actual `.png` and `.svg` files in `./dist/` for visual inspection.
 
-**Unit tests:** 60 tests (Node.js test runner), 1 skip (Gantt PNG), 0 fail. Covers renderer, tools, and MCP server.
+**Unit tests:** 71 tests (Node.js test runner), 1 skip (Gantt PNG), 0 fail. Covers renderer, tools, the HTTP server and the stdio server.

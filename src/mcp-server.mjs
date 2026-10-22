@@ -8,11 +8,10 @@
  */
 
 import http from 'http';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { config } from './config.js';
 import { logInfo, logDebug } from './logger.js';
-import { registerTools } from './tools.js';
+import { createMcpServer } from './server-factory.js';
 
 /**
  * Create the HTTP server.
@@ -75,18 +74,8 @@ function createServer() {
       sessionIdGenerator: undefined, // stateless mode
     });
 
-    const mcpServer = new McpServer(
-      { name: 'mermaid-mcp', version: '1.0.0' },
-      {
-        instructions:
-          'Mermaid diagram validation and rendering. ' +
-          'validate — check diagram syntax (instant). ' +
-          'render — render diagram as PNG (default) or SVG. ' +
-          'Uses jsdom + sharp — no browser needed.',
-      },
-    );
+    const mcpServer = createMcpServer();
 
-    registerTools(mcpServer);
     await mcpServer.connect(transport);
 
     try {
