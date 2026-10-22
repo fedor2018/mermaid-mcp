@@ -2,23 +2,30 @@ services:
   mermaid-mcp-proxy:
     image: mermaid-mcp-stdio-proxy:latest
     container_name: mermaid-mcp-proxy
+    hostname: mermaid-mcp-proxy
     build:
       context: .
       dockerfile: Dockerfile.stdio-proxy
     # The config uses a relative path (src/stdio-server.mjs) — the spawned
     # child inherits the proxy's working directory, so it must be the repo.
     working_dir: /app/mermaid
+    mem_limit: 1024m
+    mem_reservation: 128m
+    cpus: 1
     ports:
       - "8097:8080"
     volumes:
-      # Runtime copy of servers.json (gitignored) — proxy.sh refreshes it from
+      # Named-server config (config/servers.json) — proxy.sh refreshes it from
       # GitHub before every start.
-      - ./servers.local.json:/app/mermaid/servers.json:ro
+      - ./config:/config:rw
+      - ./cache:/app/cache
     command:
+      - --debug
+      - --pass-environment
       - --port=8080
       - --host=0.0.0.0
-      - --pass-environment
-      - --named-server-config=/app/mermaid/servers.json
+      - --stateless
+      - --named-server-config=/config/servers.json
     restart: unless-stopped
     networks:
       - puma-net

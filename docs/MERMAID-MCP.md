@@ -103,7 +103,7 @@ node src/stdio-server.mjs
 ./start.sh
 
 # Run smoke tests
-./test.sh
+./test/smoke.sh
 
 # Stop
 ./stop.sh
@@ -123,15 +123,20 @@ mermaid-mcp/
 │   ├── renderer.js          # Validation + rendering pipeline
 │   ├── polyfills.js         # jsdom browser polyfills
 │   ├── config.js            # Configuration from env vars
-│   ├── logger.js            # Structured JSON logging
-│   └── *.test.js            # Unit tests (Node.js test runner)
+│   └── logger.js            # Structured JSON logging
+├── test/
+│   ├── *.test.js            # Unit tests (Node.js test runner)
+│   └── smoke.sh             # HTTP smoke tests via curl
+├── config/
+│   └── servers.json         # mcp-proxy named-server config
 ├── docs/                    # Feature docs and specs
 ├── Dockerfile               # node:26.3.0-slim + fonts
 ├── Dockerfile.stdio-proxy   # Official mcp-proxy image + our stdio server
 ├── docker-compose.yml       # Local smoke-test compose
+├── docker-compose.proxy.yml # Compose for the mcp-proxy front
+├── proxy.sh                 # mcp-proxy front lifecycle (fetch config, build, run)
 ├── build-and-push.sh        # Multi-arch Docker Hub push
 ├── start.sh / stop.sh       # Local compose lifecycle
-├── test.sh                  # HTTP smoke tests via curl
 └── README.md                # Project readme
 ```
 

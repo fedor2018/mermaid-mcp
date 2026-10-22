@@ -17,7 +17,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_PATH = path.join(__dirname, 'stdio-server.mjs');
+const SERVER_PATH = path.join(__dirname, '..', 'src', 'stdio-server.mjs');
 
 const FLOWCHART = `graph TD
     A[Start] --> B[End]`;

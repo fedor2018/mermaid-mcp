@@ -6,7 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'http';
 import { setTimeout as sleep } from 'timers/promises';
-import { config } from './config.js';
+import { config } from '../src/config.js';
 
 // ---------------------------------------------------------------------------
 // Diagram fixtures
@@ -116,7 +116,7 @@ const TEST_PORT = 39950;
 // ---------------------------------------------------------------------------
 
 before(async () => {
-  const mod = await import('./mcp-server.mjs');
+  const mod = await import('../src/mcp-server.mjs');
   server = mod.startServer(TEST_PORT);
   await sleep(500);
 });

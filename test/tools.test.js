@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { registerTools } from './tools.js';
+import { registerTools } from '../src/tools.js';
 
 test('registerTools is a function', () => {
   assert.equal(typeof registerTools, 'function');

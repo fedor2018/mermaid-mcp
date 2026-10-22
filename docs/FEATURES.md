@@ -132,7 +132,7 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 - shutdown order: close the transport → pause and unref stdin → let Node exit naturally, so pending stdout writes are flushed instead of being truncated
 - `MCP_PORT` and `MCP_MAX_BODY_SIZE` are HTTP-only and have no effect here
 
-**Tests:** `src/stdio-server.test.js` — 10 tests: initialize, tools/list, validate (valid + invalid), render (PNG + SVG), stdout purity (every line must be valid JSON-RPC), logs on stderr, clean exit on stdin EOF.
+**Tests:** `test/stdio-server.test.js` — 10 tests: initialize, tools/list, validate (valid + invalid), render (PNG + SVG), stdout purity (every line must be valid JSON-RPC), logs on stderr, clean exit on stdin EOF.
 
 **Startup latency:** `jsdom` and `sharp` are imported before the server can answer `initialize` (measured 2.4–9.7 s depending on the filesystem cache). A proxy that waits for the handshake inherits that delay.
 
@@ -204,6 +204,6 @@ serves it as SSE / Streamable HTTP on `:8080/mcp`. See [mcp-proxy.md](./mcp-prox
 
 **Status:** ✅ Implemented
 
-**Description:** `test.sh` — 7 smoke tests via HTTP/curl against the running container. Tests MCP initialize handshake, tools/list, validate (valid + invalid), render (PNG + SVG + invalid). Produces actual `.png` and `.svg` files in `./dist/` for visual inspection.
+**Description:** `test/smoke.sh` — 7 smoke tests via HTTP/curl against the running container. Tests MCP initialize handshake, tools/list, validate (valid + invalid), render (PNG + SVG + invalid). Produces actual `.png` and `.svg` files in `./dist/` for visual inspection.
 
 **Unit tests:** 71 tests (Node.js test runner), 1 skip (Gantt PNG), 0 fail. Covers renderer, tools, the HTTP server and the stdio server.

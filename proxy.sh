@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manage the local mcp-proxy that fronts mermaid-mcp's stdio server.
 #
-#   ./proxy.sh fetch    # refresh servers.local.json from GitHub (fallback: local servers.json)
+#   ./proxy.sh fetch    # refresh config/servers.json from GitHub (fallback: keep the local copy)
 #   ./proxy.sh start    # fetch config, build the image and run the proxy
 #   ./proxy.sh stop     # stop the proxy container
 #   ./proxy.sh status   # container state + proxy /status output
@@ -19,9 +19,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 COMPOSE_FILE="docker-compose.proxy.yml"
-CONFIG_FILE="servers.local.json"
-CANONICAL_CONFIG="servers.json"
-CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/servers.json}"
+CONFIG_DIR="config"
+CONFIG_FILE="${CONFIG_DIR}/servers.json"
+CACHE_DIR="cache"
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/config/servers.json}"
 PROXY_PORT="${PROXY_PORT:-8097}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 
@@ -30,12 +31,14 @@ CONTAINER="mermaid-mcp-proxy"
 NETWORK="puma-net"
 
 # The flags passed to mcp-proxy inside the container.
-# --named-server-config points at the mounted runtime copy of servers.json.
+# --named-server-config points at the mounted config dir (/config/servers.json).
 PROXY_ARGS=(
+  --debug
+  --pass-environment
   --port=8080
   --host=0.0.0.0
-  --pass-environment
-  --named-server-config=/app/mermaid/servers.json
+  --stateless
+  --named-server-config=/config/servers.json
 )
 
 compose() {
@@ -48,30 +51,36 @@ compose() {
   fi
 }
 
-# Refresh the runtime config from GitHub.
-# The fetched copy is validated as JSON with an "mcpServers" object, so an
-# HTTP error page can never overwrite a working config.
+# Refresh the config from GitHub.
+# The fetched copy is validated before it replaces the file: it must be JSON
+# with an "mcpServers" object that defines our "mermaid" server. A failed or
+# foreign config leaves the local copy untouched, so the proxy always starts
+# with a valid config even offline.
 fetch_config() {
+  if [ ! -f "$CONFIG_FILE" ]; then
+    echo "config: $CONFIG_FILE is missing" >&2
+    return 1
+  fi
+
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${CONFIG_DIR}/.servers.json.XXXXXX")"
 
   if curl -fsSL --max-time 20 "$CONFIG_URL" -o "$tmp" 2>/dev/null \
     && [ -s "$tmp" ] \
-    && jq -e '.mcpServers' "$tmp" >/dev/null 2>&1; then
-    mv "$tmp" "$CONFIG_FILE"
-    echo "config: fetched from $CONFIG_URL"
+    && jq -e '.mcpServers.mermaid' "$tmp" >/dev/null 2>&1; then
+    if cmp -s "$tmp" "$CONFIG_FILE"; then
+      rm -f "$tmp"
+      echo "config: already up to date ($CONFIG_URL)"
+    else
+      mv "$tmp" "$CONFIG_FILE"
+      echo "config: updated from $CONFIG_URL"
+    fi
     return 0
   fi
 
   rm -f "$tmp"
-  if [ -f "$CANONICAL_CONFIG" ]; then
-    cp "$CANONICAL_CONFIG" "$CONFIG_FILE"
-    echo "config: fetch failed — using local $CANONICAL_CONFIG"
-    return 0
-  fi
-
-  echo "config: fetch failed and $CANONICAL_CONFIG is missing" >&2
-  return 1
+  echo "config: fetch failed or invalid — keeping local $CONFIG_FILE"
+  return 0
 }
 
 run_container() {
@@ -82,16 +91,48 @@ run_container() {
 
   echo "compose plugin not available — falling back to docker build + docker run"
   docker build -f Dockerfile.stdio-proxy -t "$IMAGE" .
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  docker run -d \
-    --name "$CONTAINER" \
-    --network "$NETWORK" \
-    --restart unless-stopped \
-    -p "${PROXY_PORT}:8080" \
-    -v "$SCRIPT_DIR/$CONFIG_FILE:/app/mermaid/servers.json:ro" \
-    -w /app/mermaid \
-    "$IMAGE" \
-    "${PROXY_ARGS[@]}"
+
+  local -a run_args=(
+    --name "$CONTAINER"
+    --hostname "$CONTAINER"
+    --network "$NETWORK"
+    --restart unless-stopped
+    -p "${PROXY_PORT}:8080"
+    -v "$SCRIPT_DIR/$CONFIG_DIR:/config:rw"
+    -v "$SCRIPT_DIR/$CACHE_DIR:/app/cache"
+    -w /app/mermaid
+  )
+
+  # Resource limits need domain-level cgroup controllers. On hosts where
+  # cgroup v2 runs in "threaded" mode the daemon refuses them, so detect that
+  # once and start without limits; otherwise apply them and fall back if the
+  # daemon still complains.
+  local -a limit_profiles
+  if [ -r /sys/fs/cgroup/cgroup.type ] && grep -qw threaded /sys/fs/cgroup/cgroup.type 2>/dev/null; then
+    echo "limits: none (cgroup v2 runs in threaded mode)" >&2
+    limit_profiles=("")
+  else
+    limit_profiles=(
+      "--cpus=1 --memory=1024m --memory-reservation=128m"
+      "--memory=1024m --memory-reservation=128m"
+      ""
+    )
+  fi
+
+  local profile
+  for profile in "${limit_profiles[@]}"; do
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    # shellcheck disable=SC2086
+    if docker run -d "${run_args[@]}" $profile "$IMAGE" "${PROXY_ARGS[@]}"; then
+      if [ -n "$profile" ]; then
+        echo "limits: $profile"
+      fi
+      return 0
+    fi
+    echo "note: the daemon rejected [$profile] — retrying with fewer limits" >&2
+  done
+
+  return 1
 }
 
 stop_container() {
@@ -102,7 +143,22 @@ stop_container() {
   fi
 }
 
+# Poll the proxy /status endpoint. The spawned server imports jsdom and sharp
+# before it can answer initialize, so the proxy binds its port only after
+# roughly 20 seconds — allow for that.
+wait_for_proxy() {
+  local attempts="$1" i
+  for i in $(seq 1 "$attempts"); do
+    if curl -sf --max-time 5 "$PROXY_URL/status" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 start() {
+  mkdir -p "$CONFIG_DIR" "$CACHE_DIR"
   fetch_config
 
   # Ensure the external network exists (docker-compose.proxy.yml expects it).
@@ -111,19 +167,27 @@ start() {
   run_container
 
   echo "Waiting for the proxy..."
-  local i
-  for i in $(seq 1 30); do
-    if curl -sf "$PROXY_URL/status" >/dev/null 2>&1; then
-      echo "Done."
-      echo "  MCP:      $PROXY_URL/servers/mermaid/mcp"
-      echo "  SSE:      $PROXY_URL/servers/mermaid/sse"
-      echo "  Status:   $PROXY_URL/status"
-      return 0
-    fi
-    sleep 1
-  done
+  if wait_for_proxy 60; then
+    echo "Done."
+    echo "  MCP:      $PROXY_URL/servers/mermaid/mcp"
+    echo "  SSE:      $PROXY_URL/servers/mermaid/sse"
+    echo "  Status:   $PROXY_URL/status"
+    return 0
+  fi
 
-  echo "Proxy did not become ready within 30s." >&2
+  # The published port can keep a stale NAT rule after a container was
+  # recreated — a restart of the container re-installs it.
+  echo "Proxy is not answering on $PROXY_PORT — restarting the container..." >&2
+  docker restart "$CONTAINER" >/dev/null 2>&1 || true
+  if wait_for_proxy 60; then
+    echo "Done."
+    echo "  MCP:      $PROXY_URL/servers/mermaid/mcp"
+    echo "  SSE:      $PROXY_URL/servers/mermaid/sse"
+    echo "  Status:   $PROXY_URL/status"
+    return 0
+  fi
+
+  echo "Proxy did not become ready." >&2
   docker logs --tail=50 "$CONTAINER" >&2 || true
   return 1
 }

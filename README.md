@@ -121,7 +121,7 @@ npm test
 ./stop.sh
 
 # Smoke test (7 HTTP tests via curl)
-./test.sh
+./test/smoke.sh
 ```
 
 ### Build and Push to Docker Hub
@@ -194,7 +194,7 @@ and runs the proxy on **:8097**:
 ./proxy.sh stop
 ```
 
-The config (`servers.json`) lives in this repo and is read by the proxy via
+The config (`config/servers.json`) lives in this repo and is read by the proxy via
 `--named-server-config`; `docker-compose.proxy.yml` describes the same container declaratively.
 
 See [docs/mcp-proxy.md](./docs/mcp-proxy.md) for the full recipe, including named servers and the
@@ -363,30 +363,30 @@ MCP_PORT=8080 npm start
 npm test
 
 # Specific test file
-node --test src/renderer.test.js
-node --test src/tools.test.js
-node --test src/mcp-server.test.js
-node --test src/stdio-server.test.js
+node --test test/renderer.test.js
+node --test test/tools.test.js
+node --test test/mcp-server.test.js
+node --test test/stdio-server.test.js
 ```
 
 ### Test Coverage
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `src/renderer.test.js` | 36 | Validate (6 diagram types), render SVG (6 types), render PNG (5 types + 1 skipped), error paths |
-| `src/tools.test.js` | 4 | Tool schema registration, validate handler, render handler (PNG + SVG) |
-| `src/mcp-server.test.js` | 21 | MCP protocol (initialize, tools/list, tools/call), HTTP error codes (405, 415, 413, 400) |
-| `src/stdio-server.test.js` | 10 | stdio protocol (initialize, tools/list, tools/call), stdout purity, logs on stderr, clean exit on stdin EOF |
+| `test/renderer.test.js` | 36 | Validate (6 diagram types), render SVG (6 types), render PNG (5 types + 1 skipped), error paths |
+| `test/tools.test.js` | 4 | Tool schema registration, validate handler, render handler (PNG + SVG) |
+| `test/mcp-server.test.js` | 21 | MCP protocol (initialize, tools/list, tools/call), HTTP error codes (405, 415, 413, 400) |
+| `test/stdio-server.test.js` | 10 | stdio protocol (initialize, tools/list, tools/call), stdout purity, logs on stderr, clean exit on stdin EOF |
 | **Total** | **71** | **70 pass, 1 skip, 0 fail** |
 
 ### Smoke Tests (Docker)
 
 ```bash
 # Start compose, wait for server, run 7 HTTP tests
-./start.sh && ./test.sh
+./start.sh && ./test/smoke.sh
 ```
 
-The smoke test suite (`test.sh`) tests via `curl` against the running container:
+The smoke test suite (`test/smoke.sh`) tests via `curl` against the running container:
 1. MCP initialize handshake
 2. `tools/list` returns 2 tools (validate, render)
 3. `validate` — valid flowchart
@@ -474,7 +474,9 @@ mermaid-mcp/
 ├── Dockerfile.stdio-proxy         # Official mcp-proxy image + our stdio server (one container)
 ├── docker-compose.yml             # Local compose (port 3000)
 ├── docker-compose.proxy.yml       # Compose for the mcp-proxy front (port 8097)
-├── servers.json                   # mcp-proxy named-server config (canonical, committed)
+├── config/
+│   └── servers.json               # mcp-proxy named-server config (canonical, committed)
+├── cache/                         # Runtime cache of the proxy (gitignored)
 ├── package.json                   # Pinned deps, ESM, npm scripts
 ├── package-lock.json              # Lockfile
 ├── .nvmrc                         # Node.js 26
@@ -484,7 +486,12 @@ mermaid-mcp/
 ├── stop.sh                        # Stop local compose
 ├── proxy.sh                       # Start/stop the mcp-proxy front (fetch config, build, run)
 ├── build-and-push.sh              # Build + push to Docker Hub (multi-arch)
-├── test.sh                        # Smoke tests (7 HTTP tests via curl)
+├── test/
+│   ├── mcp-server.test.js         # Server tests (21: MCP protocol + HTTP error codes)
+│   ├── stdio-server.test.js       # stdio tests (10: protocol, tool calls, stdout purity, EOF exit)
+│   ├── tools.test.js              # Tool tests (4: schema + handler)
+│   ├── renderer.test.js           # Renderer tests (36: validate + render, 1 skip)
+│   └── smoke.sh                   # Smoke tests (7 HTTP tests via curl)
 └── src/
     ├── mcp-server.mjs             # Entry: http.createServer + StreamableHTTPServerTransport
     ├── stdio-server.mjs           # Entry: StdioServerTransport (stdin/stdout)
@@ -494,10 +501,6 @@ mermaid-mcp/
     ├── polyfills.js               # jsdom + browser polyfills (rAF, ResizeObserver, CSSStyleSheet, SVG)
     ├── config.js                  # Frozen config object from env vars
     ├── logger.js                  # Structured JSON logging to stderr
-    ├── mcp-server.test.js         # Server tests (21: MCP protocol + HTTP error codes)
-    ├── stdio-server.test.js       # stdio tests (10: protocol, tool calls, stdout purity, EOF exit)
-    ├── tools.test.js              # Tool tests (4: schema + handler)
-    └── renderer.test.js           # Renderer tests (36: validate + render, 1 skip)
 ```
 
 ### Key Files

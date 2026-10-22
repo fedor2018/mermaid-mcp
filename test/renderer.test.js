@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, render } from './renderer.js';
+import { validate, render } from '../src/renderer.js';
 
 // ---------------------------------------------------------------------------
 // Diagram fixtures

@@ -1,9 +1,10 @@
 #!/bin/bash
 # Smoke test mermaid-mcp against the local compose environment
 # Tests via HTTP (curl) against http://localhost:3000/mcp
-# Usage: ./test.sh
+# Usage: ./test/smoke.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -44,7 +45,7 @@ mcp_request() {
 # ── Pre-check: compose must be running ──────────────────────────────────────
 echo ""
 echo "=== Check: docker compose services ==="
-if ! docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --format json 2>/dev/null | grep -q "running"; then
+if ! docker compose -f "$REPO_DIR/docker-compose.yml" ps --format json 2>/dev/null | grep -q "running"; then
   fail "docker compose is not running. Run ./start.sh first."
   exit 1
 fi
@@ -183,10 +184,10 @@ TEXT_INFO=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.content[] | select(.typ
 
 # Extract PNG base64 and decode to file
 PNG_BASE64=$(echo "$RENDER_PNG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .data' 2>/dev/null)
-mkdir -p "$SCRIPT_DIR/dist"
+mkdir -p "$REPO_DIR/dist"
 if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/png" ] && [ -n "$PNG_BASE64" ] && [ "$PNG_BASE64" != "null" ]; then
-  echo "$PNG_BASE64" | base64 -d > "$SCRIPT_DIR/dist/test-render.png" 2>/dev/null
-  pass "render — PNG returns image/png content → saved dist/test-render.png ($(wc -c < "$SCRIPT_DIR/dist/test-render.png" | tr -d ' ') bytes)"
+  echo "$PNG_BASE64" | base64 -d > "$REPO_DIR/dist/test-render.png" 2>/dev/null
+  pass "render — PNG returns image/png content → saved dist/test-render.png ($(wc -c < "$REPO_DIR/dist/test-render.png" | tr -d ' ') bytes)"
 else
   fail "render — PNG (isError=${IS_ERROR}, mimeType=${MIME_TYPE}, text=${TEXT_INFO})"
 fi
@@ -214,8 +215,8 @@ MIME_TYPE=$(echo "$RENDER_SVG_RESPONSE" | jq -r '.result.content[] | select(.typ
 # Extract SVG base64 and decode to file
 SVG_BASE64=$(echo "$RENDER_SVG_RESPONSE" | jq -r '.result.content[] | select(.type == "image") | .data' 2>/dev/null)
 if [ "$IS_ERROR" != "true" ] && [ "$MIME_TYPE" = "image/svg+xml" ] && [ -n "$SVG_BASE64" ] && [ "$SVG_BASE64" != "null" ]; then
-  echo "$SVG_BASE64" | base64 -d > "$SCRIPT_DIR/dist/test-render.svg" 2>/dev/null
-  pass "render — SVG returns image/svg+xml content → saved dist/test-render.svg ($(wc -c < "$SCRIPT_DIR/dist/test-render.svg" | tr -d ' ') bytes)"
+  echo "$SVG_BASE64" | base64 -d > "$REPO_DIR/dist/test-render.svg" 2>/dev/null
+  pass "render — SVG returns image/svg+xml content → saved dist/test-render.svg ($(wc -c < "$REPO_DIR/dist/test-render.svg" | tr -d ' ') bytes)"
 else
   fail "render — SVG (isError=${IS_ERROR}, mimeType=${MIME_TYPE})"
 fi

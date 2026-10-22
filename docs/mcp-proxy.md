@@ -49,8 +49,8 @@ http://127.0.0.1:8080/servers/other/mcp
 
 ### Config file (`--named-server-config`)
 
-The same set can be described in a JSON file. `servers.json` in the repo root is
-the canonical copy — it is committed here and published on GitHub, so the proxy
+The same set can be described in a JSON file. `config/servers.json` is the
+canonical copy — it is committed here and published on GitHub, so the proxy
 can be pointed at it from any machine:
 
 ```json
@@ -68,7 +68,7 @@ can be pointed at it from any machine:
 ```
 
 ```bash
-mcp-proxy --port=8080 --named-server-config ./servers.json
+mcp-proxy --port=8080 --named-server-config ./config/servers.json
 ```
 
 **What the loader actually reads** (`mcp_proxy/config_loader.py`):
@@ -88,7 +88,7 @@ Two consequences:
 - `--named-server-config` is the **exclusive** source of named servers; any
   `--named-server` CLI arguments are ignored (the proxy logs a warning).
 - Because `cwd` cannot be set from the config, `args` must resolve from the
-  proxy's working directory. `servers.json` therefore uses the **relative**
+  proxy's working directory. `config/servers.json` therefore uses the **relative**
   path `src/stdio-server.mjs`, and the container is started with
   `working_dir: /app/mermaid` (`catatonit` does not change the directory, so
   the child inherits it). A host-run proxy must be started from the repo root
@@ -100,7 +100,7 @@ Two consequences:
 container, wait for it to answer.
 
 ```bash
-./proxy.sh fetch     # refresh servers.local.json from GitHub
+./proxy.sh fetch     # refresh config/servers.json from GitHub
 ./proxy.sh start     # fetch + build + run (port 8097)
 ./proxy.sh status    # container state + proxy /status
 ./proxy.sh stop      # stop the container
@@ -109,16 +109,20 @@ container, wait for it to answer.
 The config lives in GitHub, so the script pulls it before every start:
 
 ```bash
-CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/servers.json}"
-curl -fsSL --max-time 20 "$CONFIG_URL" -o servers.local.json
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/config/servers.json}"
+curl -fsSL --max-time 20 "$CONFIG_URL" -o config/servers.json
 ```
 
 `mcp-proxy` cannot read a URL itself — `--named-server-config` only accepts a
 local path — so the fetch happens on the host. The downloaded copy is validated
-(`jq -e '.mcpServers'`) before it replaces the runtime file, and a failed fetch
-falls back to the committed `servers.json`, so the proxy always starts with a
-valid config even offline. The fetched copy lands in `servers.local.json`
-(gitignored) to keep the committed `servers.json` pristine.
+(`jq -e '.mcpServers'`) before it replaces the file, and a failed fetch keeps
+the local copy, so the proxy always starts with a valid config even offline.
+`config/` is mounted into the container as `/config`, so the proxy reads
+`/config/servers.json` — the same path the shared `mcp-proxy` stack uses.
+
+Resource limits (`mem_limit`, `cpus`) need domain-level cgroup controllers. On
+hosts where cgroup v2 runs in *threaded* mode the daemon refuses them, so
+`proxy.sh` falls back to fewer limits and then to none.
 
 Endpoints of the running proxy:
 
@@ -172,13 +176,16 @@ services:
     build: { context: ., dockerfile: Dockerfile.stdio-proxy }
     working_dir: /app/mermaid
     ports: ["8097:8080"]
-    volumes: ["./servers.local.json:/app/mermaid/servers.json:ro"]
-    command: ["--port=8080", "--host=0.0.0.0", "--pass-environment",
-              "--named-server-config=/app/mermaid/servers.json"]
+    volumes: ["./config:/config:rw", "./cache:/app/cache"]
+    command: ["--debug", "--pass-environment", "--port=8080", "--host=0.0.0.0",
+              "--stateless", "--named-server-config=/config/servers.json"]
 ```
 
-`working_dir` is what makes the relative path in `servers.json` resolve — the child process
+`working_dir` is what makes the relative path in `config/servers.json` resolve — the child process
 inherits the proxy's working directory, and `catatonit` does not change it.
+
+`--stateless` drops the session id from the Streamable HTTP transport, so clients do not have to
+carry `mcp-session-id` between calls — the same mode the shared `mcp-proxy` stack runs in.
 
 ### Verifying the chain
 
