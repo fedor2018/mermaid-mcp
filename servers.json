@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mermaid": {
+      "enabled": true,
+      "timeout": 60,
+      "command": "node",
+      "args": ["src/stdio-server.mjs"],
+      "transportType": "stdio"
+    }
+  }
+}

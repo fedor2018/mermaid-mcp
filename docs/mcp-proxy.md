@@ -47,20 +47,89 @@ http://127.0.0.1:8080/servers/mermaid/mcp
 http://127.0.0.1:8080/servers/other/mcp
 ```
 
-A JSON config file works too (`--named-server-config servers.json`):
+### Config file (`--named-server-config`)
+
+The same set can be described in a JSON file. `servers.json` in the repo root is
+the canonical copy — it is committed here and published on GitHub, so the proxy
+can be pointed at it from any machine:
 
 ```json
 {
   "mcpServers": {
     "mermaid": {
       "enabled": true,
+      "timeout": 60,
       "command": "node",
-      "args": ["/abs/path/to/mermaid-mcp/src/stdio-server.mjs"],
+      "args": ["src/stdio-server.mjs"],
       "transportType": "stdio"
     }
   }
 }
 ```
+
+```bash
+mcp-proxy --port=8080 --named-server-config ./servers.json
+```
+
+**What the loader actually reads** (`mcp_proxy/config_loader.py`):
+
+| Key | Read? | Notes |
+|-----|-------|-------|
+| `command` | yes | required — the executable to spawn |
+| `args` | yes | list of arguments |
+| `env` | yes | merged over the inherited environment |
+| `enabled` | yes | `false` skips the server. **The `disabled` key shown in the upstream README's "Named Servers" example is a documentation bug — the loader ignores it.** |
+| `timeout` | no | ignored |
+| `transportType` | no | ignored — the transport is always stdio |
+| `cwd` | no | not supported — the child inherits the proxy's working directory |
+
+Two consequences:
+
+- `--named-server-config` is the **exclusive** source of named servers; any
+  `--named-server` CLI arguments are ignored (the proxy logs a warning).
+- Because `cwd` cannot be set from the config, `args` must resolve from the
+  proxy's working directory. `servers.json` therefore uses the **relative**
+  path `src/stdio-server.mjs`, and the container is started with
+  `working_dir: /app/mermaid` (`catatonit` does not change the directory, so
+  the child inherits it). A host-run proxy must be started from the repo root
+  for the same config to work — use an absolute path there.
+
+### Running the proxy with the config (`./proxy.sh`)
+
+`proxy.sh` wraps the whole cycle: fetch the config, build the image, run the
+container, wait for it to answer.
+
+```bash
+./proxy.sh fetch     # refresh servers.local.json from GitHub
+./proxy.sh start     # fetch + build + run (port 8097)
+./proxy.sh status    # container state + proxy /status
+./proxy.sh stop      # stop the container
+```
+
+The config lives in GitHub, so the script pulls it before every start:
+
+```bash
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/servers.json}"
+curl -fsSL --max-time 20 "$CONFIG_URL" -o servers.local.json
+```
+
+`mcp-proxy` cannot read a URL itself — `--named-server-config` only accepts a
+local path — so the fetch happens on the host. The downloaded copy is validated
+(`jq -e '.mcpServers'`) before it replaces the runtime file, and a failed fetch
+falls back to the committed `servers.json`, so the proxy always starts with a
+valid config even offline. The fetched copy lands in `servers.local.json`
+(gitignored) to keep the committed `servers.json` pristine.
+
+Endpoints of the running proxy:
+
+```
+http://127.0.0.1:8097/servers/mermaid/mcp   # Streamable HTTP
+http://127.0.0.1:8097/servers/mermaid/sse   # SSE
+http://127.0.0.1:8097/status                # proxy status
+```
+
+The script uses `docker compose` when the plugin is installed and falls back to
+an equivalent `docker build` + `docker run` otherwise.
 
 ### Docker (one container: proxy + our stdio server)
 
@@ -92,6 +161,24 @@ arguments followed by the command to spawn. Override at runtime by repeating the
 docker run --rm -p 9090:8080 mermaid-mcp-stdio-proxy \
   --port=8080 --host=0.0.0.0 --pass-environment -- node /app/mermaid/src/stdio-server.mjs
 ```
+
+`docker-compose.proxy.yml` wires the same thing declaratively — the image is built from
+`Dockerfile.stdio-proxy`, the runtime copy of the config is mounted read-only, and the proxy
+flags come from `command:`:
+
+```yaml
+services:
+  mermaid-mcp-proxy:
+    build: { context: ., dockerfile: Dockerfile.stdio-proxy }
+    working_dir: /app/mermaid
+    ports: ["8097:8080"]
+    volumes: ["./servers.local.json:/app/mermaid/servers.json:ro"]
+    command: ["--port=8080", "--host=0.0.0.0", "--pass-environment",
+              "--named-server-config=/app/mermaid/servers.json"]
+```
+
+`working_dir` is what makes the relative path in `servers.json` resolve — the child process
+inherits the proxy's working directory, and `catatonit` does not change it.
 
 ### Verifying the chain
 

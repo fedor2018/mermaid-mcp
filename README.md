@@ -185,6 +185,18 @@ docker build -f Dockerfile.stdio-proxy -t mermaid-mcp-stdio-proxy .
 docker run --rm -p 8080:8080 mermaid-mcp-stdio-proxy
 ```
 
+Or use the bundled helper — it fetches the named-server config from GitHub, builds the image
+and runs the proxy on **:8097**:
+
+```bash
+./proxy.sh start     # → http://127.0.0.1:8097/servers/mermaid/mcp
+./proxy.sh status
+./proxy.sh stop
+```
+
+The config (`servers.json`) lives in this repo and is read by the proxy via
+`--named-server-config`; `docker-compose.proxy.yml` describes the same container declaratively.
+
 See [docs/mcp-proxy.md](./docs/mcp-proxy.md) for the full recipe, including named servers and the
 reverse direction (proxying the HTTP server as a stdio server).
 
@@ -442,6 +454,18 @@ To run it as a **local** stdio server instead (the client spawns the process):
 }
 ```
 
+Or reach it through the bundled **mcp-proxy** (`./proxy.sh start`):
+
+```jsonc
+"mermaid": {
+  "type": "remote",
+  "url": "http://localhost:8097/servers/mermaid/mcp",
+  "enabled": true,
+  "category": "validation",
+  "enabledTools": ["validate", "render"]
+}
+```
+
 ## Project Structure
 
 ```
@@ -449,6 +473,8 @@ mermaid-mcp/
 ├── Dockerfile                     # node:26.3.0-slim + fonts-dejavu + fonts-liberation
 ├── Dockerfile.stdio-proxy         # Official mcp-proxy image + our stdio server (one container)
 ├── docker-compose.yml             # Local compose (port 3000)
+├── docker-compose.proxy.yml       # Compose for the mcp-proxy front (port 8097)
+├── servers.json                   # mcp-proxy named-server config (canonical, committed)
 ├── package.json                   # Pinned deps, ESM, npm scripts
 ├── package-lock.json              # Lockfile
 ├── .nvmrc                         # Node.js 26
@@ -456,6 +482,7 @@ mermaid-mcp/
 ├── .husky/                        # Git hooks
 ├── start.sh                       # Start local compose (creates Docker network if needed)
 ├── stop.sh                        # Stop local compose
+├── proxy.sh                       # Start/stop the mcp-proxy front (fetch config, build, run)
 ├── build-and-push.sh              # Build + push to Docker Hub (multi-arch)
 ├── test.sh                        # Smoke tests (7 HTTP tests via curl)
 └── src/
