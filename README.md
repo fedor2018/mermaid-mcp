@@ -62,6 +62,36 @@ graph TD
     style I fill:#fff4e1
 ```
 
+```text
+┌─ opencode ────────────────────────────────┐
+│ agent — calls the tool over HTTP          │
+└─────────────────────┬─────────────────────┘
+                      │ HTTP POST /mcp
+                      ▼
+┌─ mermaid-mcp container ─────────────────────────────────────────────┐
+│                                                                     │
+│  http.createServer ──→ POST /mcp ──→ McpServer (per request)        │
+│                                            │                        │
+│                         ┌──────────────────┴─────────────┐          │
+│                         ▼                                ▼          │
+│                 validate tool                         render tool   │
+│                         │                                │          │
+│                         ▼                                ▼          │
+│                 mermaid.parse()                 mermaid.parse()     │
+│                                                          │          │
+│                                                  (if valid)         │
+│                                                          ▼          │
+│                                       mermaid.render() + jsdom      │
+│                                                          │          │
+│                                                          ▼          │
+│                                                  sharp → PNG        │
+│                                                          │          │
+│                                                    PNG buffer       │
+│                                                          │          │
+│                                                  └──→ McpServer     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 The tool layer is transport-agnostic — `src/server-factory.js` builds the `McpServer`
 once, and each transport only supplies its own connection:
 
@@ -73,6 +103,17 @@ graph LR
     S1 --> T1
 
     style F1 fill:#f3e5f5
+```
+
+```text
+    server-factory.js
+    createMcpServer()
+           │
+           ├───────────────→ mcp-server.mjs (StreamableHTTP :3000) ──┐
+           │                                                          │
+           └───────────────→ stdio-server.mjs (StdioServerTransport) ┤
+                                                                  ▼
+                                                     validate / render
 ```
 
 **Key design decisions:**

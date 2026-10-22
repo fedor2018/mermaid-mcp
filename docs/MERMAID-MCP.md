@@ -64,6 +64,38 @@ graph TD
     style I fill:#fff4e1
 ```
 
+```text
+┌─ opencode ────────────────────────────────┐
+│ agent — calls the tool over HTTP          │
+└─────────────────────┬─────────────────────┘
+                      │ HTTP POST /mcp
+                      ▼
+┌─ puma-net ───────────────────────────────────────────────────────────────┐
+│ ┌─ mermaid-mcp container ─────────────────────────────────────────────┐ │
+│ │                                                                     │ │
+│ │  http.createServer ──→ POST /mcp ──→ McpServer (per request)        │ │
+│ │                                            │                        │ │
+│ │                         ┌──────────────────┴─────────────┐          │ │
+│ │                         ▼                                ▼          │ │
+│ │                 validate tool                         render tool   │ │
+│ │                         │                                │          │ │
+│ │                         ▼                                ▼          │ │
+│ │                 mermaid.parse()                 mermaid.parse()     │ │
+│ │                                                          │          │ │
+│ │                                                  (if valid)         │ │
+│ │                                                          ▼          │ │
+│ │                                       mermaid.render() + jsdom      │ │
+│ │                                                          │          │ │
+│ │                                                          ▼          │ │
+│ │                                                  sharp → PNG        │ │
+│ │                                                          │          │ │
+│ │                                                    PNG buffer       │ │
+│ │                                                          │          │ │
+│ │                                                  └──→ McpServer     │ │
+│ └─────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 - **Transport:** HTTP (StreamableHTTPServerTransport) — follows hugging-kreuzberg-mcp pattern
 - **HTTP server:** Node.js built-in `http` module — no Express dependency
 - **Stateless:** Per-request `McpServer` + transport pair — no cross-request state
