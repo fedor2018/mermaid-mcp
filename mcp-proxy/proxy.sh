@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Manage the local mcp-proxy that fronts mermaid-mcp's stdio server.
 #
-#   ./proxy.sh fetch    # refresh config/servers.json from GitHub (fallback: keep the local copy)
-#   ./proxy.sh start    # fetch config, build the image and run the proxy
-#   ./proxy.sh stop     # stop the proxy container
-#   ./proxy.sh status   # container state + proxy /status output
+#   mcp-proxy/proxy.sh fetch    # refresh mcp-proxy/config/servers.json from GitHub (fallback: keep the local copy)
+#   mcp-proxy/proxy.sh start    # fetch config, build the image and run the proxy
+#   mcp-proxy/proxy.sh stop     # stop the proxy container
+#   mcp-proxy/proxy.sh status   # container state + proxy /status output
 #
 # The proxy re-exposes src/stdio-server.mjs as Streamable HTTP / SSE:
 #   http://127.0.0.1:8097/servers/mermaid/mcp
@@ -18,11 +18,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-COMPOSE_FILE="docker-compose.proxy.yml"
+COMPOSE_FILE="docker-compose.yml"
 CONFIG_DIR="config"
 CONFIG_FILE="${CONFIG_DIR}/servers.json"
 CACHE_DIR="cache"
-CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/config/servers.json}"
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/mcp-proxy/config/servers.json}"
 PROXY_PORT="${PROXY_PORT:-8097}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 
@@ -90,7 +90,9 @@ run_container() {
   fi
 
   echo "compose plugin not available — falling back to docker build + docker run"
-  docker build -f Dockerfile.stdio-proxy -t "$IMAGE" .
+  # Build context is the repo root (package.json + src/ are copied from there),
+  # the dockerfile lives in this directory.
+  docker build -f "$SCRIPT_DIR/Dockerfile" -t "$IMAGE" "$SCRIPT_DIR/.."
 
   local -a run_args=(
     --name "$CONTAINER"
@@ -100,6 +102,8 @@ run_container() {
     -p "${PROXY_PORT}:8080"
     -v "$SCRIPT_DIR/$CONFIG_DIR:/config:rw"
     -v "$SCRIPT_DIR/$CACHE_DIR:/app/cache"
+    # Auto-install hooks (init.d) — editable without rebuilding the image.
+    -v "$SCRIPT_DIR/init.d:/docker-entrypoint-init.d:ro"
     -w /app/mermaid
   )
 
@@ -158,10 +162,11 @@ wait_for_proxy() {
 }
 
 start() {
-  mkdir -p "$CONFIG_DIR" "$CACHE_DIR"
+  # Runtime dirs of the proxy layer (init.d is tracked in git, cache/ is not).
+  mkdir -p "$CONFIG_DIR" "$CACHE_DIR" "$SCRIPT_DIR/init.d"
   fetch_config
 
-  # Ensure the external network exists (docker-compose.proxy.yml expects it).
+  # Ensure the external network exists (docker-compose.yml expects it).
   docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK"
 
   run_container

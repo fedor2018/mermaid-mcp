@@ -222,23 +222,23 @@ Use an **absolute path** to the script — the proxy runs the child in its own w
 Ready-made image (official proxy image + our stdio server in one container):
 
 ```bash
-docker build -f Dockerfile.stdio-proxy -t mermaid-mcp-stdio-proxy .
-docker run --rm -p 8080:8080 mermaid-mcp-stdio-proxy
+docker build -f mcp-proxy/Dockerfile -t mermaid-mcp-stdio-proxy .
+docker run --rm -p 8080:8080 -v "$(pwd)/mcp-proxy/config:/config:ro" mermaid-mcp-stdio-proxy
 ```
 
 Or use the bundled helper — it fetches the named-server config from GitHub, builds the image
-and runs the proxy on **:8097**:
+and runs the proxy on **:8097** (all proxy tooling lives under `mcp-proxy/`):
 
 ```bash
-./proxy.sh start     # → http://127.0.0.1:8097/servers/mermaid/mcp
-./proxy.sh status
-./proxy.sh stop
+mcp-proxy/proxy.sh start     # → http://127.0.0.1:8097/servers/mermaid/mcp
+mcp-proxy/proxy.sh status
+mcp-proxy/proxy.sh stop
 ```
 
-The config (`config/servers.json`) lives in this repo and is read by the proxy via
-`--named-server-config`; `docker-compose.proxy.yml` describes the same container declaratively.
+The config (`mcp-proxy/config/servers.json`) lives in this repo and is read by the proxy via
+`--named-server-config`; `mcp-proxy/docker-compose.yml` describes the same container declaratively.
 
-See [docs/mcp-proxy.md](./docs/mcp-proxy.md) for the full recipe, including named servers and the
+See [mcp-proxy/README.md](./mcp-proxy/README.md) for the full recipe, including named servers and the
 reverse direction (proxying the HTTP server as a stdio server).
 
 ## Tool Reference
@@ -495,7 +495,7 @@ To run it as a **local** stdio server instead (the client spawns the process):
 }
 ```
 
-Or reach it through the bundled **mcp-proxy** (`./proxy.sh start`):
+Or reach it through the bundled **mcp-proxy** (`mcp-proxy/proxy.sh start`):
 
 ```jsonc
 "mermaid": {
@@ -512,12 +512,7 @@ Or reach it through the bundled **mcp-proxy** (`./proxy.sh start`):
 ```
 mermaid-mcp/
 ├── Dockerfile                     # node:26.3.0-slim + fonts-dejavu + fonts-liberation
-├── Dockerfile.stdio-proxy         # Official mcp-proxy image + our stdio server (one container)
 ├── docker-compose.yml             # Local compose (port 3000)
-├── docker-compose.proxy.yml       # Compose for the mcp-proxy front (port 8097)
-├── config/
-│   └── servers.json               # mcp-proxy named-server config (canonical, committed)
-├── cache/                         # Runtime cache of the proxy (gitignored)
 ├── package.json                   # Pinned deps, ESM, npm scripts
 ├── package-lock.json              # Lockfile
 ├── .nvmrc                         # Node.js 26
@@ -525,23 +520,34 @@ mermaid-mcp/
 ├── .husky/                        # Git hooks
 ├── start.sh                       # Start local compose (creates Docker network if needed)
 ├── stop.sh                        # Stop local compose
-├── proxy.sh                       # Start/stop the mcp-proxy front (fetch config, build, run)
 ├── build-and-push.sh              # Build + push to Docker Hub (multi-arch)
 ├── test/
 │   ├── mcp-server.test.js         # Server tests (21: MCP protocol + HTTP error codes)
 │   ├── stdio-server.test.js       # stdio tests (10: protocol, tool calls, stdout purity, EOF exit)
 │   ├── tools.test.js              # Tool tests (4: schema + handler)
 │   ├── renderer.test.js           # Renderer tests (36: validate + render, 1 skip)
-│   └── smoke.sh                   # Smoke tests (7 HTTP tests via curl)
-└── src/
-    ├── mcp-server.mjs             # Entry: http.createServer + StreamableHTTPServerTransport
-    ├── stdio-server.mjs           # Entry: StdioServerTransport (stdin/stdout)
-    ├── server-factory.js          # Shared createMcpServer() — both transports
-    ├── tools.js                   # validate + render tool definitions (Zod schemas)
-    ├── renderer.js                # Render pipeline: mermaid.parse → mermaid.render → sharp
-    ├── polyfills.js               # jsdom + browser polyfills (rAF, ResizeObserver, CSSStyleSheet, SVG)
-    ├── config.js                  # Frozen config object from env vars
-    ├── logger.js                  # Structured JSON logging to stderr
+│   ├── smoke.sh                   # Smoke tests (7 HTTP tests via curl)
+│   └── proxy-smoke.sh             # mcp-proxy smoke tests (init.d hooks + live chain)
+├── src/
+│   ├── mcp-server.mjs             # Entry: http.createServer + StreamableHTTPServerTransport
+│   ├── stdio-server.mjs           # Entry: StdioServerTransport (stdin/stdout)
+│   ├── server-factory.js          # Shared createMcpServer() — both transports
+│   ├── tools.js                   # validate + render tool definitions (Zod schemas)
+│   ├── renderer.js                # Render pipeline: mermaid.parse → mermaid.render → sharp
+│   ├── polyfills.js               # jsdom + browser polyfills (rAF, ResizeObserver, CSSStyleSheet, SVG)
+│   ├── config.js                  # Frozen config object from env vars
+│   └── logger.js                  # Structured JSON logging to stderr
+└── mcp-proxy/                     # Everything around the mcp-proxy front
+    ├── Dockerfile                 # Official mcp-proxy image + our stdio server (one container)
+    ├── docker-compose.yml         # Compose for the mcp-proxy front (port 8097)
+    ├── proxy.sh                   # Start/stop the mcp-proxy front (fetch config, build, run)
+    ├── docker-entrypoint.sh       # Runs /docker-entrypoint-init.d hooks, then execs the proxy
+    ├── init.d/
+    │   └── 10-mermaid-preinstall.sh # Auto-install: npm ci of the child's deps (guarded)
+    ├── config/
+    │   └── servers.json           # mcp-proxy named-server config (canonical, committed)
+    ├── cache/                     # Runtime cache of the proxy (gitignored)
+    └── README.md                  # Full mcp-proxy recipe
 ```
 
 ### Key Files

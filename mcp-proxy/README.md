@@ -49,7 +49,7 @@ http://127.0.0.1:8080/servers/other/mcp
 
 ### Config file (`--named-server-config`)
 
-The same set can be described in a JSON file. `config/servers.json` is the
+The same set can be described in a JSON file. `mcp-proxy/config/servers.json` is the
 canonical copy — it is committed here and published on GitHub, so the proxy
 can be pointed at it from any machine:
 
@@ -68,7 +68,7 @@ can be pointed at it from any machine:
 ```
 
 ```bash
-mcp-proxy --port=8080 --named-server-config ./config/servers.json
+mcp-proxy --port=8080 --named-server-config ./mcp-proxy/config/servers.json
 ```
 
 **What the loader actually reads** (`mcp_proxy/config_loader.py`):
@@ -88,29 +88,29 @@ Two consequences:
 - `--named-server-config` is the **exclusive** source of named servers; any
   `--named-server` CLI arguments are ignored (the proxy logs a warning).
 - Because `cwd` cannot be set from the config, `args` must resolve from the
-  proxy's working directory. `config/servers.json` therefore uses the **relative**
+  proxy's working directory. `mcp-proxy/config/servers.json` therefore uses the **relative**
   path `src/stdio-server.mjs`, and the container is started with
   `working_dir: /app/mermaid` (`catatonit` does not change the directory, so
   the child inherits it). A host-run proxy must be started from the repo root
   for the same config to work — use an absolute path there.
 
-### Running the proxy with the config (`./proxy.sh`)
+### Running the proxy with the config (`mcp-proxy/proxy.sh`)
 
-`proxy.sh` wraps the whole cycle: fetch the config, build the image, run the
-container, wait for it to answer.
+All proxy tooling lives under `mcp-proxy/`, so the repo root stays shaped as in the upstream
+project. Run the commands from the repo root:
 
 ```bash
-./proxy.sh fetch     # refresh config/servers.json from GitHub
-./proxy.sh start     # fetch + build + run (port 8097)
-./proxy.sh status    # container state + proxy /status
-./proxy.sh stop      # stop the container
+mcp-proxy/proxy.sh fetch     # refresh mcp-proxy/config/servers.json from GitHub
+mcp-proxy/proxy.sh start     # fetch + build + run (port 8097)
+mcp-proxy/proxy.sh status    # container state + proxy /status
+mcp-proxy/proxy.sh stop      # stop the container
 ```
 
 The config lives in GitHub, so the script pulls it before every start:
 
 ```bash
-CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/config/servers.json}"
-curl -fsSL --max-time 20 "$CONFIG_URL" -o config/servers.json
+CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/fedor2018/mermaid-mcp/main/mcp-proxy/config/servers.json}"
+curl -fsSL --max-time 20 "$CONFIG_URL" -o mcp-proxy/config/servers.json
 ```
 
 `mcp-proxy` cannot read a URL itself — `--named-server-config` only accepts a
@@ -137,7 +137,7 @@ an equivalent `docker build` + `docker run` otherwise.
 
 ### Docker (one container: proxy + our stdio server)
 
-`Dockerfile.stdio-proxy` in the repo root builds exactly that — the official proxy image plus our
+`mcp-proxy/Dockerfile` builds exactly that — the official proxy image plus our
 server:
 
 ```dockerfile
@@ -147,45 +147,80 @@ RUN apk add --no-cache nodejs npm font-dejavu font-liberation
 
 WORKDIR /app/mermaid
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev                  # seed-cache; the preinstall hook skips when present
 COPY src/ ./src/
 
-CMD ["--port=8080", "--host=0.0.0.0", "--pass-environment", "--", "node", "/app/mermaid/src/stdio-server.mjs"]
+COPY mcp-proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY mcp-proxy/init.d/ /docker-entrypoint-init.d/
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["--port=8080", "--host=0.0.0.0", "--pass-environment", "--stateless", "--named-server-config=/config/servers.json"]
 ```
 
 ```bash
-docker build -f Dockerfile.stdio-proxy -t mermaid-mcp-stdio-proxy .
-docker run --rm -p 8080:8080 mermaid-mcp-stdio-proxy
+docker build -f mcp-proxy/Dockerfile -t mermaid-mcp-stdio-proxy .
+docker run --rm -p 8080:8080 -v "$(pwd)/mcp-proxy/config:/config:ro" mermaid-mcp-stdio-proxy
 ```
 
-The base image entry point (`catatonit -- mcp-proxy`) is inherited, so `CMD` holds the proxy
-arguments followed by the command to spawn. Override at runtime by repeating the whole command:
+The base image entry point (`catatonit -- mcp-proxy`) is replaced by `docker-entrypoint.sh`:
+it runs every `*.sh` hook from `/docker-entrypoint-init.d` (auto-install, see below) and then
+`exec catatonit -- mcp-proxy`. `CMD` holds just the proxy arguments; the config is the exclusive
+source of named servers, so the child command is not repeated. Override at runtime by repeating
+the whole set:
 
 ```bash
 docker run --rm -p 9090:8080 mermaid-mcp-stdio-proxy \
-  --port=8080 --host=0.0.0.0 --pass-environment -- node /app/mermaid/src/stdio-server.mjs
+  --port=8080 --host=0.0.0.0 --pass-environment --named-server-config=/config/servers.json
 ```
 
-`docker-compose.proxy.yml` wires the same thing declaratively — the image is built from
-`Dockerfile.stdio-proxy`, the runtime copy of the config is mounted read-only, and the proxy
+`mcp-proxy/docker-compose.yml` wires the same thing declaratively — the image is built from
+`mcp-proxy/Dockerfile` (context = repo root), the runtime copy of the config is mounted, and the proxy
 flags come from `command:`:
 
 ```yaml
 services:
   mermaid-mcp-proxy:
-    build: { context: ., dockerfile: Dockerfile.stdio-proxy }
+    build: { context: .., dockerfile: mcp-proxy/Dockerfile }
     working_dir: /app/mermaid
     ports: ["8097:8080"]
-    volumes: ["./config:/config:rw", "./cache:/app/cache"]
+    volumes: ["./config:/config:rw", "./cache:/app/cache", "./init.d:/docker-entrypoint-init.d:ro"]
     command: ["--debug", "--pass-environment", "--port=8080", "--host=0.0.0.0",
               "--stateless", "--named-server-config=/config/servers.json"]
 ```
 
-`working_dir` is what makes the relative path in `config/servers.json` resolve — the child process
+`working_dir` is what makes the relative path in `mcp-proxy/config/servers.json` resolve — the child process
 inherits the proxy's working directory, and `catatonit` does not change it.
 
 `--stateless` drops the session id from the Streamable HTTP transport, so clients do not have to
 carry `mcp-session-id` between calls — the same mode the shared `mcp-proxy` stack runs in.
+
+### Auto-install via `init.d` hooks
+
+```text
+container start → entrypoint runs /docker-entrypoint-init.d/*.sh (sorted)
+                → each hook installs what it owns (mermaid: npm ci --omit=dev)
+                → exec mcp-proxy → named servers spawn from /config/servers.json
+```
+
+Dependencies do not have to be baked into the image — the container can install them itself at
+start. `mcp-proxy/docker-entrypoint.sh` runs every `*.sh` hook from `/docker-entrypoint-init.d`
+in lexicographic order (the classic `docker-entrypoint-initdb.d` pattern) before exec-ing the
+proxy, and `mcp-proxy/init.d/10-mermaid-preinstall.sh` performs the install. While the hooks
+come through, the container log prints `[entrypoint] running 10-mermaid-preinstall.sh`.
+
+Guards and knobs:
+
+| Mechanism | Behavior |
+|-----------|----------|
+| build-time `npm ci` | seed-cache layer: a normal start **skips** the hook, works offline |
+| node_modules guard | the hook skips when `node_modules` is complete (fast restarts) |
+| `FORCE_PREINSTALL=1` | forces a fresh `npm ci` (e.g. after pinning new deps) |
+| `SKIP_INIT=1` | skips all hooks (`docker run -e SKIP_INIT=1 …`) |
+| hook failure | aborts the container — `restart: unless-stopped` picks it up |
+| new project hook | drop `mcp-proxy/init.d/20-<project>-preinstall.sh`; the `./init.d` bind-mount makes it visible **without an image rebuild** |
+
+`config/servers.json` stays untouched: the config-loader reads only `command/args/env/enabled`
+and would silently ignore install hints anyway — installation is the hook layer's job.
 
 ### Verifying the chain
 

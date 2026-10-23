@@ -176,9 +176,9 @@ Validates and renders a Mermaid diagram to PNG or SVG. Uses `mermaid.parse()` fo
 - `build-and-push.sh` — Multi-arch build and push to Docker Hub (`tuiteraz/mermaid-mcp`)
 - `pin-image-digest.sh` — Pins image digest for reproducible deployments
 
-**Second image:** `Dockerfile.stdio-proxy` — based on the official `ghcr.io/sparfenyuk/mcp-proxy`
+**Second image:** `mcp-proxy/Dockerfile` — based on the official `ghcr.io/sparfenyuk/mcp-proxy`
 image plus Node.js and the Mermaid fonts. The proxy spawns our stdio server as a child process and
-serves it as SSE / Streamable HTTP on `:8080/mcp`. See [mcp-proxy.md](./mcp-proxy.md).
+serves it as SSE / Streamable HTTP on `:8080/mcp`. See [mcp-proxy/README.md](../mcp-proxy/README.md).
 
 **opencode config:** Configure as a remote MCP server pointing to your deployment endpoint.
 

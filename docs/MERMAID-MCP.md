@@ -159,17 +159,20 @@ mermaid-mcp/
 ├── test/
 │   ├── *.test.js            # Unit tests (Node.js test runner)
 │   └── smoke.sh             # HTTP smoke tests via curl
-├── config/
-│   └── servers.json         # mcp-proxy named-server config
 ├── docs/                    # Feature docs and specs
 ├── Dockerfile               # node:26.3.0-slim + fonts
-├── Dockerfile.stdio-proxy   # Official mcp-proxy image + our stdio server
 ├── docker-compose.yml       # Local smoke-test compose
-├── docker-compose.proxy.yml # Compose for the mcp-proxy front
-├── proxy.sh                 # mcp-proxy front lifecycle (fetch config, build, run)
-├── build-and-push.sh        # Multi-arch Docker Hub push
 ├── start.sh / stop.sh       # Local compose lifecycle
-└── README.md                # Project readme
+├── build-and-push.sh        # Multi-arch Docker Hub push
+├── README.md                # Project readme
+└── mcp-proxy/               # Everything around the mcp-proxy front
+    ├── Dockerfile           # Official mcp-proxy image + our stdio server
+    ├── docker-compose.yml   # Compose for the mcp-proxy front
+    ├── proxy.sh             # mcp-proxy front lifecycle (fetch config, build, run)
+    ├── docker-entrypoint.sh # Runs /docker-entrypoint-init.d hooks, then execs the proxy
+    ├── init.d/              # Auto-install hooks (e.g. 10-mermaid-preinstall.sh)
+    ├── config/servers.json  # mcp-proxy named-server config
+    └── README.md            # Full mcp-proxy recipe
 ```
 
 ---

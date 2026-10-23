@@ -4,8 +4,10 @@ services:
     container_name: mermaid-mcp-proxy
     hostname: mermaid-mcp-proxy
     build:
-      context: .
-      dockerfile: Dockerfile.stdio-proxy
+      # The dockerfile lives in mcp-proxy/, but the context is the repo root:
+      # package.json, package-lock.json and src/ are copied from there.
+      context: ..
+      dockerfile: mcp-proxy/Dockerfile
     # The config uses a relative path (src/stdio-server.mjs) — the spawned
     # child inherits the proxy's working directory, so it must be the repo.
     working_dir: /app/mermaid
@@ -19,6 +21,8 @@ services:
       # GitHub before every start.
       - ./config:/config:rw
       - ./cache:/app/cache
+      # Auto-install hooks (init.d) — editable without rebuilding the image.
+      - ./init.d:/docker-entrypoint-init.d:ro
     command:
       - --debug
       - --pass-environment
