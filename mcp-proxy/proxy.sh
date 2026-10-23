@@ -100,6 +100,12 @@ run_container() {
     --network "$NETWORK"
     --restart unless-stopped
     -p "${PROXY_PORT}:8080"
+    # Preinstall knobs (10-mermaid-preinstall.sh) — empty values fall back
+    # to the in-hook defaults.
+    -e "MERMAID_REPO_URL=${MERMAID_REPO_URL:-}"
+    -e "MERMAID_REF=${MERMAID_REF:-}"
+    -e "FORCE_PREINSTALL=${FORCE_PREINSTALL:-0}"
+    -e "SKIP_INIT=${SKIP_INIT:-0}"
     -v "$SCRIPT_DIR/$CONFIG_DIR:/config:rw"
     -v "$SCRIPT_DIR/$CACHE_DIR:/app/cache"
     # Auto-install hooks (init.d) — editable without rebuilding the image.

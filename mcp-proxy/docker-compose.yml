@@ -30,6 +30,13 @@ services:
       - --host=0.0.0.0
       - --stateless
       - --named-server-config=/config/servers.json
+    environment:
+      # Preinstall knobs (mcp-proxy/init.d/10-mermaid-preinstall.sh).
+      # Empty values fall back to the in-hook defaults.
+      MERMAID_REPO_URL: ${MERMAID_REPO_URL:-}
+      MERMAID_REF: ${MERMAID_REF:-}
+      FORCE_PREINSTALL: ${FORCE_PREINSTALL:-0}
+      SKIP_INIT: ${SKIP_INIT:-0}
     restart: unless-stopped
     networks:
       - puma-net

@@ -36,9 +36,10 @@ mkdir -p "$TMP"
 
 A1_CONTAINER="mermaid-smoke-entrypoint-guard"
 A2_CONTAINER="mermaid-smoke-entrypoint-order"
+TS_CONTAINER="mermaid-smoke-thinsource"
 
 cleanup() {
-  for c in "$A1_CONTAINER" "$A2_CONTAINER"; do
+  for c in "$A1_CONTAINER" "$A2_CONTAINER" "$TS_CONTAINER"; do
     docker rm -f "$c" >/dev/null 2>&1
   done
   rm -rf "$TMP"
@@ -90,6 +91,12 @@ if wait_exited "$A1_CONTAINER"; then
   echo "$LOGS" | grep -q 'node_modules present — skipping' \
     && pass "preinstall guard skips seeded node_modules" \
     || fail "preinstall guard did not skip (seeded node_modules missing?)"
+  echo "$LOGS" | grep -q 'source present (baked image)' \
+    && pass "git phase skips a baked source" \
+    || fail "git phase did not skip the baked source"
+  echo "$LOGS" | grep -q 'apk packages present' \
+    && pass "apk phase skips installed packages" \
+    || fail "apk phase did not skip installed packages"
 else
   fail "guard container did not exit (state: $(docker inspect -f '{{.State.Status}}' "$A1_CONTAINER" 2>/dev/null))"
 fi
@@ -125,6 +132,44 @@ if wait_exited "$A2_CONTAINER"; then
 else
   fail "ordering container did not exit (state: $(docker inspect -f '{{.State.Status}}' "$A2_CONTAINER" 2>/dev/null))"
 fi
+
+# 1c. Thin-source mode: an empty /app/mermaid → apk + git clone + npm ci + server.
+# This is the full stretch of the auto-install (needs network, ~1–3 min).
+cyan_info "1c. thin-source (apk + git clone + npm ci)"
+TS_PORT="${TS_PORT:-18097}"
+TS_CONTAINER="mermaid-smoke-thinsource"
+mkdir -p "$TMP/thinsource"
+docker rm -f "$TS_CONTAINER" >/dev/null 2>&1
+
+docker run -d --name "$TS_CONTAINER" \
+  -e "MERMAID_REPO_URL=${MERMAID_REPO_URL:-}" \
+  -e "MERMAID_REF=${MERMAID_REF:-main}" \
+  -v "$TMP/thinsource:/app/mermaid" \
+  -v "$PROXY_DIR/config:/config:rw" \
+  -p "${TS_PORT}:8080" \
+  "$IMAGE" >/dev/null
+
+TS_OK=0
+for i in $(seq 1 150); do
+  if curl -sf --max-time 5 "http://127.0.0.1:${TS_PORT}/status" 2>/dev/null \
+    | grep -q '"mermaid":"configured"'; then
+    TS_OK=1
+    break
+  fi
+  STATE=$(docker inspect -f '{{.State.Status}}' "$TS_CONTAINER" 2>/dev/null || echo missing)
+  [ "$STATE" = "exited" ] && break
+  sleep 2
+done
+
+if [ "$TS_OK" = "1" ]; then
+  TS_LOGS=$(docker logs "$TS_CONTAINER" 2>&1)
+  echo "$TS_LOGS" | grep -q '\[preinstall\] git clone' \
+    && pass "thin-source: hook cloned $MERMAID_REF of the repo and built deps" \
+    || pass "thin-source: server is alive after the full auto-install"
+else
+  fail "thin-source: server did not come up (state: ${STATE}, see docker logs $TS_CONTAINER)"
+fi
+docker rm -f "$TS_CONTAINER" >/dev/null 2>&1
 
 # ── Part 2: live chain ───────────────────────────────────────────────────────
 echo ""

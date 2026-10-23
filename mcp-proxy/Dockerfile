@@ -18,7 +18,9 @@
 FROM ghcr.io/sparfenyuk/mcp-proxy:latest
 
 # Node runtime for the stdio server + fonts for Mermaid text rendering.
-RUN apk add --no-cache nodejs npm font-dejavu font-liberation
+# git is included so the preinstall hook can clone the project at runtime
+# (thin-source mode — see init.d/10-mermaid-preinstall.sh).
+RUN apk add --no-cache nodejs npm git font-dejavu font-liberation
 
 WORKDIR /app/mermaid
 

@@ -198,7 +198,7 @@ carry `mcp-session-id` between calls — the same mode the shared `mcp-proxy` st
 
 ```text
 container start → entrypoint runs /docker-entrypoint-init.d/*.sh (sorted)
-                → each hook installs what it owns (mermaid: npm ci --omit=dev)
+                → each hook installs what it owns before the proxy starts
                 → exec mcp-proxy → named servers spawn from /config/servers.json
 ```
 
@@ -208,16 +208,34 @@ in lexicographic order (the classic `docker-entrypoint-initdb.d` pattern) before
 proxy, and `mcp-proxy/init.d/10-mermaid-preinstall.sh` performs the install. While the hooks
 come through, the container log prints `[entrypoint] running 10-mermaid-preinstall.sh`.
 
+The mermaid hook runs three phases, each guarded on its own:
+
+```text
+1. apk add — system packages: only what is missing (installed = instant no-op)
+2. git     — source: clone into /app/mermaid when it is empty (thin-source mode),
+             reset --hard to $MERMAID_REF when it is already a clone,
+             skip when the source is baked into the image
+3. npm ci  — node deps: skipped when node_modules is already complete
+```
+
 Guards and knobs:
 
-| Mechanism | Behavior |
-|-----------|----------|
-| build-time `npm ci` | seed-cache layer: a normal start **skips** the hook, works offline |
-| node_modules guard | the hook skips when `node_modules` is complete (fast restarts) |
-| `FORCE_PREINSTALL=1` | forces a fresh `npm ci` (e.g. after pinning new deps) |
-| `SKIP_INIT=1` | skips all hooks (`docker run -e SKIP_INIT=1 …`) |
-| hook failure | aborts the container — `restart: unless-stopped` picks it up |
-| new project hook | drop `mcp-proxy/init.d/20-<project>-preinstall.sh`; the `./init.d` bind-mount makes it visible **without an image rebuild** |
+| Knob / guard | Meaning | Default |
+|--------------|---------|---------|
+| build-time `npm ci` | seed-cache layer: a normal start **skips** phases 2–3, works offline | baked |
+| node_modules guard | phase 3 skips when `node_modules` is complete (fast restarts) | on |
+| `PREINSTALL_APK` | apk packages for phase 1 | `font-dejavu font-liberation git` |
+| `MERMAID_REPO_URL` | repo to clone in thin-source mode | `https://github.com/fedor2018/mermaid-mcp.git` |
+| `MERMAID_REF` | branch/tag the source is pinned to | `main` |
+| `FORCE_PREINSTALL=1` | re-runs every phase regardless of its guard (fresh `npm ci`, source refresh) | off |
+| `SKIP_INIT=1` | skips all hooks (`docker run -e SKIP_INIT=1 …`) | off |
+| hook failure | aborts the container — `restart: unless-stopped` picks it up | — |
+| new project hook | drop `mcp-proxy/init.d/20-<project>-preinstall.sh`; the `./init.d` bind-mount makes it visible **without an image rebuild** | — |
+
+**Thin-source mode.** The image can run *without* the project baked into it: mount an empty
+volume over `/app/mermaid` and the hook installs the apk packages, clones `MERMAID_REPO_URL`
+at `MERMAID_REF`, runs `npm ci`, and the proxy serves the tools — a project update is just a
+container restart, no image rebuild. The baked copy in the image stays as the fast offline path.
 
 `config/servers.json` stays untouched: the config-loader reads only `command/args/env/enabled`
 and would silently ignore install hints anyway — installation is the hook layer's job.
